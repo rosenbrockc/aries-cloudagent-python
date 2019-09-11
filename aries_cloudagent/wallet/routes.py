@@ -190,14 +190,26 @@ async def wallet_set_public_did(request: web.BaseRequest):
     except WalletError:
         # DID not found or not in valid format
         raise web.HTTPBadRequest()
-    info = await wallet.set_public_did(did)
-    if info:
-        # Publish endpoint if necessary
-        endpoint = context.settings.get("default_endpoint")
-        ledger = await context.inject(BaseLedger, required=False)
-        if ledger:
-            async with ledger:
-                await ledger.update_endpoint_for_did(info.did, endpoint)
+
+    # Make sure that the DID exists on the ledger before it gets assigned to be
+    # the public DID. Since `set_public_did` is implemented on the BaseWallet,
+    # we check the ledger here rather than in the wallet method call.
+    did_exists_ledger = False
+    ledger = await context.inject(BaseLedger, required=False)
+    if ledger:
+        async with ledger:
+            verkey = await ledger.get_key_for_did(info.did)
+            if verkey is not None and info.verkey == verkey:
+                did_exists_ledger = True
+
+    if did_exists_ledger:
+        info = await wallet.set_public_did(did)
+        if info:
+            # Publish endpoint if necessary
+            endpoint = context.settings.get("default_endpoint")
+            if ledger:
+                async with ledger:
+                    await ledger.update_endpoint_for_did(info.did, endpoint)
 
     return web.json_response({"result": format_did_info(info)})
 

@@ -539,8 +539,8 @@ class IndyLedger(BaseLedger):
             + f"credential definition id {credential_definition_id}"
         )
 
-    async def get_key_for_did(self, did: str) -> str:
-        """Fetch the verkey for a ledger DID.
+    async def _get_nym_for_did(self, did: str) -> dict:
+        """Fetch the NYM info from the ledger for a DID.
 
         Args:
             did: The DID to look up on the ledger or in the cache
@@ -552,8 +552,27 @@ class IndyLedger(BaseLedger):
                 public_did and public_did.did, nym
             )
         response_json = await self._submit(request_json, bool(public_did))
-        data_json = (json.loads(response_json))["result"]["data"]
-        return json.loads(data_json)["verkey"]
+        return (json.loads(response_json))["result"]["data"]
+
+    async def get_key_for_did(self, did: str) -> str:
+        """Fetch the verkey for a ledger DID.
+
+        Args:
+            did: The DID to look up on the ledger or in the cache
+        """
+        data_json = await self._get_nym_for_did(did)
+        if data_json is not None:
+            return json.loads(data_json)["verkey"]
+
+    async def get_role_for_did(self, did: str) -> str:
+        """Fetch the role for a ledger DID.
+
+        Args:
+            did: The DID to look up on the ledger or in the cache
+        """
+        data_json = await self._get_nym_for_did(did)
+        if data_json is not None:
+            return json.loads(data_json)["role"]
 
     async def get_endpoint_for_did(self, did: str) -> str:
         """Fetch the endpoint for a ledger DID.
