@@ -9,6 +9,7 @@ from ..ledger.base import BaseLedger
 
 from .base import DIDInfo, BaseWallet
 from .error import WalletError
+from .util import bytes_to_b64, b64_to_bytes
 
 
 class DIDSchema(Schema):
@@ -41,6 +42,31 @@ class SetTagPolicyRequestSchema(Schema):
     """Request schema for tagging policy set request."""
 
     taggables = fields.List(fields.Str())
+
+
+class SignMessageRequestSchema(Schema):
+    """Request schema used to sign messages.
+    """
+    message = fields.Str()
+    from_verkey = fields.Str()
+
+
+class SignMessageResultSchema(Schema):
+    """Result schema for a signed message.
+    """
+    signature = fields.Str()
+    message = fields.Str()
+    from_verkey = fields.Str()
+
+
+class VerifyMessageRequestSchema(Schema):
+    message = fields.Str()
+    from_verkey = fields.Str()
+    signature = fields.Str()
+
+
+class VerifyMessageResultSchema(Schema):
+    verified = fields.Bool()
 
 
 def format_did_info(info: DIDInfo):
@@ -267,6 +293,71 @@ async def wallet_set_tagging_policy(request: web.BaseRequest):
     return web.json_response({})
 
 
+@docs(tags=["wallet"], summary="Sign a message using a private key stored in the wallet.")
+@request_schema(SignMessageRequestSchema())
+@response_schema(SignMessageResultSchema())
+async def wallet_sign_message(request: web.BaseRequest):
+    """
+    Request handler for signing a message using a private key stored in t wallet.
+
+    Args:
+        request: aiohttp request object
+
+    Returns:
+        SignMessageResultSchema: which includes the signature.
+
+    """
+    context = request.app["request_context"]
+    body = await request.json()
+    try:
+        message = b64_to_bytes(body.get("message"))
+        from_verkey = body.get("from_verkey")
+    except:
+        raise web.HTTPBadRequest()
+
+    wallet: BaseWallet = await context.inject(BaseWallet, required=False)
+    if not wallet or wallet.WALLET_TYPE != "indy":
+        raise web.HTTPForbidden()
+    signature = await wallet.sign_message(message, from_verkey)
+    return web.json_response({
+        "signature": bytes_to_b64(signature),
+        "message": body.get("message"),
+        "from_verkey": from_verkey
+    })
+
+
+@docs(tags=["wallet"], summary="Verify a message signature sent by somebody else.")
+@request_schema(VerifyMessageRequestSchema())
+@response_schema(VerifyMessageResultSchema())
+async def wallet_verify_message(request: web.BaseRequest):
+    """
+    Request handler for verifying a message and signature.
+
+    Args:
+        request: aiohttp request object
+
+    Returns:
+        SignMessageResultSchema: which includes the signature.
+
+    """
+    context = request.app["request_context"]
+    body = await request.json()
+    try:
+        message = b64_to_bytes(body.get("message"))
+        from_verkey = body.get("from_verkey")
+        signature = b64_to_bytes(body.get("signature"))
+    except:
+        raise web.HTTPBadRequest()
+
+    wallet: BaseWallet = await context.inject(BaseWallet, required=False)
+    if not wallet or wallet.WALLET_TYPE != "indy":
+        raise web.HTTPForbidden()
+    okay = await wallet.verify_message(message, signature, from_verkey)
+    return web.json_response({
+        "verified": okay
+    })
+
+
 async def register(app: web.Application):
     """Register routes."""
 
@@ -278,5 +369,7 @@ async def register(app: web.Application):
             web.post("/wallet/did/public", wallet_set_public_did),
             web.get("/wallet/tag-policy/{id}", wallet_get_tagging_policy),
             web.post("/wallet/tag-policy/{id}", wallet_set_tagging_policy),
+            web.post("/wallet/sign-message", wallet_sign_message),
+            web.post("/wallet/verify-message", wallet_verify_message)
         ]
     )
