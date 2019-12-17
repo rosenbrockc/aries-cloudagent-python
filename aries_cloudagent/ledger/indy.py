@@ -583,7 +583,10 @@ class IndyLedger(BaseLedger):
             )
         response_json = await self._submit(request_json, bool(public_did))
         data_json = (json.loads(response_json))["result"]["data"]
-        return json.loads(data_json)["verkey"]
+        if data_json is not None:
+            return json.loads(data_json).get("verkey")
+        else:
+            return None
 
     async def get_endpoint_for_did(self, did: str) -> str:
         """Fetch the endpoint for a ledger DID.
